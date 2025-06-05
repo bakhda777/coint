@@ -160,8 +160,12 @@ class TestCointegration(unittest.TestCase):
                        f"Для коинтегрированной пары τ должна быть < -1.5, получено: {result['tau_stat']}")
         
         # Проверяем, что β близко к истинному значению (1.5)
-        self.assertAlmostEqual(result['beta'], 1.5, delta=0.3,
-                              f"β должна быть близко к 1.5, получено: {result['beta']}")
+        self.assertAlmostEqual(
+            result['beta'],
+            1.5,
+            delta=0.3,
+            msg=f"β должна быть близко к 1.5, получено: {result['beta']}"
+        )
         
         # Проверяем флаг коинтеграции
         self.assertTrue(result['is_coint'], "Пара должна быть определена как коинтегрированная")
