@@ -1,0 +1,19 @@
+[project]
+name = "coint"
+version = "0.1.0"
+description = "Backtest engine for crypto pair trading"
+authors = [{name="Твой Ник", email="твой@email.com"}]
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy",
+  "statsmodels",
+  "numba",
+  "pyarrow",
+  "matplotlib",
+  "tqdm"
+]
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["."]

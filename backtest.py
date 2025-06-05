@@ -24,7 +24,7 @@ import logging
 import math
 import multiprocessing
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 import sys
 import time
 import warnings

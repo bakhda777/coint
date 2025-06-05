@@ -193,8 +193,8 @@ def _fast_coint_beta_tau_k_numba(series_dep: np.ndarray, series_indep: np.ndarra
         pass # Продолжаем, _adf_autolag_fixed_lag_numba сам проверит длину du_precomputed
 
     tau_stat, k_lag_used, n_eff_adf = _adf_autolag_fixed_lag_numba(resid, du_precomputed_resid, k_max_adf_lags_for_diff)
-195: 
-196:     return beta, tau_stat, k_lag_used, n_eff_adf
+    
+    return beta, tau_stat, k_lag_used, n_eff_adf
 
 
 
