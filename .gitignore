@@ -1,0 +1,10 @@
+data/
+*.parquet
+*.csv
+__pycache__/
+*.pyc
+*.pkl
+.DS_Store
+.env
+config.ini
+
