@@ -1,0 +1,36 @@
+{
+  "total_pnl": -579.3056401892771,
+  "num_trades": 150,
+  "execution_time": 45.6,
+  "risk_management": {
+    "initial_equity": 10000.0,
+    "final_equity": 9420.694359810723,
+    "max_concurrent_trades": 20,
+    "max_capital_usage": 0.8,
+    "volatility_sizing": true
+  },
+  "stats": {},
+  "pair_results": {
+    "BTC/ETH": {
+      "num_trades": 45,
+      "final_pnl_pct": 0.0,
+      "final_pnl_absolute": 234.56,
+      "formation_metrics": null,
+      "error_message": null
+    },
+    "ADA/DOT": {
+      "num_trades": 38,
+      "final_pnl_pct": 0.0,
+      "final_pnl_absolute": -123.45,
+      "formation_metrics": null,
+      "error_message": null
+    },
+    "SOL/AVAX": {
+      "num_trades": 67,
+      "final_pnl_pct": 0.0,
+      "final_pnl_absolute": 456.78,
+      "formation_metrics": null,
+      "error_message": null
+    }
+  }
+}

@@ -15,8 +15,18 @@ from typing import Dict, List, Optional, Tuple, Any
 import logging
 
 # Настройка стиля графиков
-plt.style.use('seaborn-v0_8')
-sns.set_palette("husl")
+try:
+    plt.style.use('seaborn-v0_8')
+except OSError:
+    try:
+        plt.style.use('seaborn')
+    except OSError:
+        plt.style.use('default')
+
+try:
+    sns.set_palette("husl")
+except:
+    pass  # Если seaborn недоступен, используем стандартную палитру
 
 def trades_to_dataframe(trades_list: List[Dict[str, Any]]) -> pd.DataFrame:
     """
@@ -274,7 +284,7 @@ def create_trades_analysis_plot(trades_df: pd.DataFrame,
     
     # 4. Monthly Returns (если есть даты)
     if 'exit_date' in trades_df.columns:
-        monthly_pnl = trades_df.set_index('exit_date')['pnl'].resample('M').sum()
+        monthly_pnl = trades_df.set_index('exit_date')['pnl'].resample('ME').sum()
         monthly_pnl.plot(kind='bar', ax=ax4, color=['green' if x >= 0 else 'red' for x in monthly_pnl])
         ax4.set_title('Monthly PnL', fontsize=14, fontweight='bold')
         ax4.set_xlabel('Month')

@@ -266,8 +266,8 @@ class BacktestParams:
         self.start_date = None  # Если None, используются все доступные данные с начала
         self.end_date = None    # Если None, используются все доступные данные до конца
 
-        # Минимальное стандартное отклонение спреда
-        self.min_spread_std = 1e-5  # Минимальное значение std спреда для открытия позиции
+        # Минимальное стандартное отклонение спреда (фильтр "мёртвых" пар)
+        self.min_spread_std = 1e-5  # Минимальное значение std спреда для открытия позиции (отсеивает пары с низкой волатильностью)
 
         # Флаг для использования Kalman фильтра вместо OLS
         self.use_kalman = False
@@ -639,6 +639,12 @@ def backtest_one_pair(
                 # Проверка по p-value, если включена
                 if params.use_pvalue_filter_for_entry and current_pvalue > params.p_value_threshold_entry:
                     # p-value слишком высокое - коинтеграция недостаточно статистически значима
+                    continue
+                
+                # Проверка на минимальную волатильность спреда (отсеиваем "мёртвые" пары)
+                current_spread_std = np.std(window_residuals)
+                if current_spread_std < params.min_spread_std:
+                    # Спред слишком стабильный - пара "мёртвая", не торгуем
                     continue
                     
                 # Проверки риск-менеджмента перед открытием позиции
@@ -1195,3 +1201,214 @@ def backtest_all_pairs(
             results['stats'][f'exits_{reason}_pct'] = reason_count / len(results['trades'])
 
     return results
+
+
+def run_backtest_with_reports(
+    pairs: list[tuple[str, str]], 
+    formation_start_dt: datetime,
+    formation_end_dt: datetime,
+    trading_start_dt: datetime,
+    trading_end_dt: datetime,
+    params: BacktestParams,
+    output_dir: Path | str = "backtest_results",
+    report_name: str = "backtest_report",
+    n_jobs: int = 1,
+    save_trades_parquet: bool = True,
+    generate_charts: bool = True,
+    generate_html_report: bool = True
+) -> dict:
+    """
+    Запускает полный бэктестинг с автоматической генерацией отчётов.
+    
+    Args:
+        pairs: Список пар для бэктестинга
+        formation_start_dt: Начало формационного периода
+        formation_end_dt: Конец формационного периода  
+        trading_start_dt: Начало торгового периода
+        trading_end_dt: Конец торгового периода
+        params: Параметры бэктестинга
+        output_dir: Директория для сохранения результатов
+        report_name: Имя отчёта
+        n_jobs: Количество параллельных процессов
+        save_trades_parquet: Сохранять ли данные сделок в parquet
+        generate_charts: Генерировать ли графики
+        generate_html_report: Генерировать ли HTML отчёт
+        
+    Returns:
+        Словарь с результатами бэктестинга и путями к файлам отчётов
+    """
+    logging.info(f"Запуск бэктестинга для {len(pairs)} пар...")
+    logging.info(f"Период формации: {formation_start_dt} - {formation_end_dt}")
+    logging.info(f"Торговый период: {trading_start_dt} - {trading_end_dt}")
+    
+    output_dir = Path(output_dir)
+    
+    # Запускаем бэктестинг для каждой пары
+    all_results = {
+        'pair_results': {},
+        'total_pnl': 0.0,
+        'num_trades': 0,
+        'trades': [],
+        'execution_time': 0.0,
+        'risk_management': {
+            'initial_equity': params.initial_capital,
+            'final_equity': params.initial_capital,
+            'equity_curve': [],
+            'max_concurrent_trades': params.max_concurrent_trades,
+            'max_capital_usage': params.max_capital_usage,
+            'max_loss_per_trade': params.max_loss_per_trade,
+            'volatility_sizing': params.volatility_sizing
+        }
+    }
+    
+    # Сбрасываем глобальные переменные
+    reset_risk_management_globals(initial_equity=params.initial_capital)
+    
+    start_time = time.time()
+    
+    # Выполняем бэктест для каждой пары последовательно
+    for i, pair in enumerate(pairs):
+        logging.info(f"Обработка пары {i+1}/{len(pairs)}: {pair[0]}/{pair[1]}")
+        
+        try:
+            pair_result = backtest_one_pair(
+                pair=pair,
+                formation_start_dt=formation_start_dt,
+                formation_end_dt=formation_end_dt,
+                trading_start_dt=trading_start_dt,
+                trading_end_dt=trading_end_dt,
+                params=params,
+                update_globals=True
+            )
+            
+            pair_name = f"{pair[0]}/{pair[1]}"
+            all_results['pair_results'][pair_name] = pair_result
+            
+            if 'trades' in pair_result and pair_result['trades']:
+                all_results['trades'].extend(pair_result['trades'])
+                all_results['num_trades'] += pair_result['num_trades']
+                all_results['total_pnl'] += pair_result.get('final_pnl_absolute', 0.0)
+            
+            if pair_result.get('error_message'):
+                logging.warning(f"Пара {pair_name}: {pair_result['error_message']}")
+            else:
+                pnl_abs = pair_result.get('final_pnl_absolute', 0.0)
+                num_trades = pair_result.get('num_trades', 0)
+                logging.info(f"Пара {pair_name}: {num_trades} сделок, PnL = ${pnl_abs:.2f}")
+                
+        except Exception as e:
+            logging.error(f"Ошибка при обработке пары {pair[0]}/{pair[1]}: {e}")
+            continue
+    
+    # Обновляем финальные метрики
+    all_results['risk_management']['final_equity'] = GLOBAL_EQUITY
+    all_results['risk_management']['equity_curve'] = GLOBAL_EQUITY_CURVE
+    all_results['execution_time'] = time.time() - start_time
+    
+    # Рассчитываем общие статистики
+    if all_results['trades']:
+        wins = [t for t in all_results['trades'] if t['pnl'] > 0]
+        losses = [t for t in all_results['trades'] if t['pnl'] <= 0]
+        
+        all_results['stats'] = {
+            'total_trades': len(all_results['trades']),
+            'win_trades': len(wins),
+            'loss_trades': len(losses),
+            'win_rate': len(wins) / len(all_results['trades']) if all_results['trades'] else 0.0,
+            'avg_trade_pnl': np.mean([t['pnl'] for t in all_results['trades']]),
+            'avg_win_pnl': np.mean([t['pnl'] for t in wins]) if wins else 0.0,
+            'avg_loss_pnl': np.mean([t['pnl'] for t in losses]) if losses else 0.0,
+            'max_win_pnl': max([t['pnl'] for t in all_results['trades']], default=0),
+            'max_loss_pnl': min([t['pnl'] for t in all_results['trades']], default=0),
+            'total_commission': sum(t.get('commission', 0) for t in all_results['trades']),
+            'total_funding': sum(t.get('funding', 0) for t in all_results['trades']),
+            'avg_holding_hours': np.mean([t.get('holding_hours', 0) for t in all_results['trades']])
+        }
+    
+    logging.info(f"Бэктестинг завершён за {all_results['execution_time']:.2f} сек")
+    logging.info(f"Общих сделок: {all_results['num_trades']}, Общий PnL: ${all_results['total_pnl']:.2f}")
+    
+    # Генерируем отчёты
+    if all_results['trades'] and (save_trades_parquet or generate_charts or generate_html_report):
+        logging.info("Генерация отчётов...")
+        
+        try:
+            # Конвертируем сделки в DataFrame
+            trades_df = reports.trades_to_dataframe(all_results['trades'])
+            
+            # Рассчитываем метрики производительности
+            metrics = reports.calculate_performance_metrics(
+                trades_df, 
+                initial_capital=params.initial_capital
+            )
+            all_results['performance_metrics'] = metrics
+            
+            # Создаём директорию для результатов
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Сохраняем результаты в различных форматах
+            files_created = reports.save_backtest_results(
+                all_results, 
+                output_dir, 
+                report_name
+            )
+            
+            all_results['output_files'] = files_created
+            
+            # Выводим ключевые метрики
+            logging.info("=== РЕЗУЛЬТАТЫ БЭКТЕСТИНГА ===")
+            logging.info(f"Общая доходность: {metrics['total_return_pct']:.2f}%")
+            logging.info(f"Коэффициент Шарпа: {metrics['sharpe_ratio']:.2f}")
+            logging.info(f"Максимальная просадка: -{metrics['max_drawdown_pct']:.2f}%")
+            logging.info(f"Win Rate: {metrics['win_rate']*100:.1f}%")
+            logging.info(f"Profit Factor: {metrics['profit_factor']:.2f}")
+            logging.info(f"Коэффициент Кальмара: {metrics['calmar_ratio']:.2f}")
+            logging.info("=== ФАЙЛЫ ОТЧЁТОВ ===")
+            
+            for file_type, file_path in files_created.items():
+                logging.info(f"{file_type}: {file_path}")
+                
+        except Exception as e:
+            logging.error(f"Ошибка при генерации отчётов: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
+    
+    else:
+        logging.warning("Нет сделок для генерации отчётов")
+    
+    return all_results
+
+
+if __name__ == "__main__":
+    # Пример использования
+    logging.basicConfig(level=logging.INFO)
+    
+    # Параметры по умолчанию
+    params = BacktestParams()
+    
+    # Пример пар для тестирования
+    test_pairs = [
+        ("BTCUSDT", "ETHUSDT"),
+        ("ADAUSDT", "DOTUSDT"),
+        # Добавьте больше пар по необходимости
+    ]
+    
+    # Определяем периоды
+    formation_start = datetime(2023, 1, 1)
+    formation_end = datetime(2023, 3, 31)
+    trading_start = datetime(2023, 4, 1)
+    trading_end = datetime(2023, 6, 30)
+    
+    # Запускаем бэктест с отчётами
+    results = run_backtest_with_reports(
+        pairs=test_pairs,
+        formation_start_dt=formation_start,
+        formation_end_dt=formation_end,
+        trading_start_dt=trading_start,
+        trading_end_dt=trading_end,
+        params=params,
+        output_dir="backtest_results",
+        report_name="crypto_pairs_backtest"
+    )
+    
+    print(f"Бэктестинг завершён. Результаты сохранены в: {results.get('output_files', {})}")

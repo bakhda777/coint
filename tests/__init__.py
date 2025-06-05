@@ -1,0 +1,1 @@
+# Tests for cryptocurrency pairs trading backtest system 
