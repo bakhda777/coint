@@ -1,10 +1,10 @@
-data/
-*.parquet
-*.csv
 __pycache__/
 *.pyc
 *.pkl
+*.npy
+data/
+*.parquet
 .DS_Store
 .env
-config.ini
+statsmodels_src/
 
