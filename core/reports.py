@@ -497,7 +497,7 @@ def save_backtest_results(backtest_results: Dict[str, Any],
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    files_created = {}
+    files_created: Dict[str, Path] = {}
     
     # Конвертируем сделки в DataFrame и сохраняем
     trades_df = trades_to_dataframe(backtest_results.get('trades', []))
@@ -507,11 +507,13 @@ def save_backtest_results(backtest_results: Dict[str, Any],
         parquet_path = output_dir / f"{filename_prefix}_trades.parquet"
         trades_df.to_parquet(parquet_path)
         files_created['trades_parquet'] = parquet_path
+        files_created['parquet'] = parquet_path
         
         # CSV для удобства просмотра
         csv_path = output_dir / f"{filename_prefix}_trades.csv"
         trades_df.to_csv(csv_path, index=False)
         files_created['trades_csv'] = csv_path
+        files_created['csv'] = csv_path
     
     # Сохраняем полные результаты в JSON
     import json
@@ -540,6 +542,7 @@ def save_backtest_results(backtest_results: Dict[str, Any],
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(json_data, f, indent=2, default=str)
     files_created['summary_json'] = json_path
+    files_created['json'] = json_path
     
     # Генерируем HTML отчёт
     html_path = generate_html_report(backtest_results, output_dir, filename_prefix)
